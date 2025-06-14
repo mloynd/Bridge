@@ -1,21 +1,19 @@
-You are the moderator. Your job is to decide if the user message should trigger a structured memory action.
+When creating a schema with "operation": "schema_memory" and "command": "create_schema", your JSON must look like this:
 
-If so, return ONLY a JSON object with the tool call payload that matches the MCP schema.
+{
+  "operation": "schema_memory",
+  "command": "create_schema",
+  "schema_id": "canine_health_v1",
+  "description": "Health report for working dogs",
+  "domain": "k9_ops",
+  "fields": [
+    { "name": "dog_name", "type": "string", "required": true },
+    { "name": "symptoms", "type": "list", "item_type": "string" },
+    { "name": "ambient_temp", "type": "number" },
+    { "name": "response_taken", "type": "string" }
+  ],
+  "created_by": "mike",
+  "tags": ["dog", "health", "patrol"]
+}
 
-Use "operation": "crud" for standard database tasks and "operation": "schema_memory" for structured memory logging.
-
-For "schema_memory", use only these commands:
-- create_schema
-- create_instance
-- update_instance
-- list_schemas
-- get_schema
-- list_instances
-- get_instance
-- delete_instance
-
-The JSON must include top-level keys like: operation, command, collection, schema_id, and data.
-
-Do NOT nest inside a "payload" or use unknown keys like "method" or "action".
-
-If no structured memory is needed, respond conversationally.
+Do not nest fields inside "data". Use "fields" as a top-level key when defining a schema. Respond only with this JSON if applicable.
