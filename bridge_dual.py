@@ -1,4 +1,4 @@
-# bridge_dual.py – Unified Chat + Tool Routing with OpenAI v1+ support and UI
+# bridge_dual.py – Unified Chat + Tool Routing with OpenAI v1+ and Proper Tool Injection
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
@@ -106,16 +106,22 @@ Otherwise, respond as a conversational assistant.
             run = client.beta.threads.runs.create(
                 thread_id=thread.id,
                 assistant_id=ASSISTANT_ID,
-                tool_choice={
-                    "type": "function",
-                    "function": {
-                        "name": "handle_mcp_operation",
-                        "arguments": str(payload)
-                    }
-                }
+                tool_choice={"type": "function", "function": {"name": "handle_mcp_operation"}}
             )
+            # Wait for Scribe to ask for tool output
             while True:
                 run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+                if run_status.status == "requires_action":
+                    tool_call = run_status.required_action.submit_tool_outputs.tool_calls[0]
+                    mcp_response = requests.post(MCP_URL, json=payload).json()
+                    client.beta.threads.runs.submit_tool_outputs(
+                        thread_id=thread.id,
+                        run_id=run.id,
+                        tool_outputs=[{
+                            "tool_call_id": tool_call.id,
+                            "output": str(mcp_response)
+                        }]
+                    )
                 if run_status.status == "completed":
                     break
             messages = client.beta.threads.messages.list(thread_id=thread.id)
