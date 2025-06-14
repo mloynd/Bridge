@@ -10,3 +10,10 @@ When using "operation": "schema_memory", use only these commands:
 
 NEVER use command values like "add_record", "store_log", or "submit_entry".
 Always use "create_instance" to log a new data point into an existing schema.
+When logging data into an existing schema, ALWAYS use:
+  "operation": "schema_memory"
+  "command": "create_instance"
+
+Never use: "add_entry", "store_log", "submit_data", or similar.
+
+Use "create_instance" as the ONLY valid command for storing structured memory.
