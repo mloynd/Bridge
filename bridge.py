@@ -1,34 +1,29 @@
-from fastapi import FastAPI, Request
 import openai
 import requests
-import os
+from env import OPENAI_API_KEY, ASSISTANT_ID, MCP_URL
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
-MCP_URL = os.getenv("MCP_URL")
+openai.api_key = OPENAI_API_KEY
 
-app = FastAPI()
-
-@app.post("/bridge")
-async def bridge(request: Request):
-    body = await request.json()
-    user_input = body.get("message", "Hello")
-
+def run_mcp_conversation(message: str):
     thread = openai.beta.threads.create()
+
     openai.beta.threads.messages.create(
         thread_id=thread.id,
         role="user",
-        content=user_input
+        content=message
     )
 
     run = openai.beta.threads.runs.create(
         thread_id=thread.id,
-        assistant_id=os.getenv("ASSISTANT_ID")
+        assistant_id=ASSISTANT_ID
     )
 
     while True:
         run_status = openai.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+
         if run_status.status == "completed":
             break
+
         elif run_status.status == "requires_action":
             tool_call = run_status.required_action.submit_tool_outputs.tool_calls[0]
             args = eval(tool_call.function.arguments)
@@ -44,4 +39,4 @@ async def bridge(request: Request):
             )
 
     messages = openai.beta.threads.messages.list(thread_id=thread.id)
-    return { "response": messages.data[0].content[0].text.value }
+    return messages.data[0].content[0].text.value
