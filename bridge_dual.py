@@ -79,7 +79,7 @@ async def moderator_router(request: Request):
     user_input = body.get("message", "Hello")
 
     with open("moderator_prompt.txt") as f:
-        system_prompt = f.read()
+    system_prompt = f.read()
 
     response = client.chat.completions.create(
         model="gpt-4",
@@ -94,7 +94,7 @@ async def moderator_router(request: Request):
     if reply.startswith("{"):
         try:
             import json
-            payload = json.loads(re
+            payload = json.loads(reply)
             thread = client.beta.threads.create()
             client.beta.threads.messages.create(
                 thread_id=thread.id,
