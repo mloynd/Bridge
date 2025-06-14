@@ -79,7 +79,7 @@ async def moderator_router(request: Request):
     user_input = body.get("message", "Hello")
 
     with open("moderator_prompt.txt") as f:
-    system_prompt = f.read()
+        system_prompt = f.read()
 
     response = client.chat.completions.create(
         model="gpt-4",
