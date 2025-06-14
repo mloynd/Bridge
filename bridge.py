@@ -4,34 +4,9 @@ import requests
 import os
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
+MCP_URL = os.getenv("MCP_URL")
 
 app = FastAPI()
-
-MCP_URL = "https://mcp-server-wah4.onrender.com/mcp"
-
-mcp_tool = {
-    "type": "function",
-    "function": {
-        "name": "handle_mcp_operation",
-        "description": "Send a command to the MCP server.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "operation": { "type": "string", "enum": ["create", "read", "update", "delete"] },
-                "collection": { "type": "string" },
-                "data": { "type": "object" }
-            },
-            "required": ["operation", "collection", "data"]
-        }
-    }
-}
-
-assistant = openai.beta.assistants.create(
-    name="MCP Bridge Assistant",
-    instructions="Convert text into database actions and call MCP.",
-    tools=[mcp_tool],
-    model="gpt-4-1106-preview"
-)
 
 @app.post("/bridge")
 async def bridge(request: Request):
@@ -47,7 +22,7 @@ async def bridge(request: Request):
 
     run = openai.beta.threads.runs.create(
         thread_id=thread.id,
-        assistant_id=assistant.id
+        assistant_id=os.getenv("ASSISTANT_ID")
     )
 
     while True:
@@ -58,6 +33,7 @@ async def bridge(request: Request):
             tool_call = run_status.required_action.submit_tool_outputs.tool_calls[0]
             args = eval(tool_call.function.arguments)
             mcp_response = requests.post(MCP_URL, json=args).json()
+
             openai.beta.threads.runs.submit_tool_outputs(
                 thread_id=thread.id,
                 run_id=run.id,
@@ -68,5 +44,4 @@ async def bridge(request: Request):
             )
 
     messages = openai.beta.threads.messages.list(thread_id=thread.id)
-    last_message = messages.data[0].content[0].text.value
-    return { "response": last_message }
+    return { "response": messages.data[0].content[0].text.value }
