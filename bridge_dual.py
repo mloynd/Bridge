@@ -69,8 +69,12 @@ async def bridge_to_scribe(request: Request):
                 }]
             )
 
-    messages = client.beta.threads.messages.list(thread_id=thread.id)
+messages = client.beta.threads.messages.list(thread_id=thread.id)
+
+if messages.data and messages.data[0].content:
     return {"response": messages.data[0].content[0].text.value}
+else:
+    return {"response": f"✅ Tool executed. MCP response: {mcp_response}"}
 
 
 @app.post("/unified")
