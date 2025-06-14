@@ -1,0 +1,115 @@
+from fastapi import FastAPI, Request
+import openai
+import requests
+import os
+from env import OPENAI_API_KEY, ASSISTANT_ID, MCP_URL
+
+openai.api_key = OPENAI_API_KEY
+
+app = FastAPI()
+
+@app.post("/chat")
+async def chat_with_gpt(request: Request):
+    body = await request.json()
+    user_input = body.get("message", "Hello")
+
+    response = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": user_input}]
+    )
+
+    return {"response": response.choices[0].message.content}
+
+
+@app.post("/bridge")
+async def bridge_to_scribe(request: Request):
+    body = await request.json()
+    user_input = body.get("message", "Hello")
+
+    thread = openai.beta.threads.create()
+    openai.beta.threads.messages.create(
+        thread_id=thread.id,
+        role="user",
+        content=user_input
+    )
+
+    run = openai.beta.threads.runs.create(
+        thread_id=thread.id,
+        assistant_id=ASSISTANT_ID
+    )
+
+    while True:
+        run_status = openai.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+
+        if run_status.status == "completed":
+            break
+
+        elif run_status.status == "requires_action":
+            tool_call = run_status.required_action.submit_tool_outputs.tool_calls[0]
+            args = eval(tool_call.function.arguments)
+            mcp_response = requests.post(MCP_URL, json=args).json()
+
+            openai.beta.threads.runs.submit_tool_outputs(
+                thread_id=thread.id,
+                run_id=run.id,
+                tool_outputs=[{
+                    "tool_call_id": tool_call.id,
+                    "output": str(mcp_response)
+                }]
+            )
+
+    messages = openai.beta.threads.messages.list(thread_id=thread.id)
+    return {"response": messages.data[0].content[0].text.value}
+
+
+@app.post("/unified")
+async def moderator_router(request: Request):
+    body = await request.json()
+    user_input = body.get("message", "Hello")
+
+    system_prompt = """
+You are the moderator. Your job is to decide if the user message should trigger a structured memory action.
+If so, return ONLY a JSON object with the tool call payload that matches the MCP schema.
+Otherwise, respond as a conversational assistant.
+"""
+
+    response = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_input}
+        ]
+    )
+
+    reply = response.choices[0].message.content.strip()
+
+    if reply.startswith("{"):
+        try:
+            payload = eval(reply)
+            thread = openai.beta.threads.create()
+            openai.beta.threads.messages.create(
+                thread_id=thread.id,
+                role="user",
+                content="Moderator forwarded structured memory command."
+            )
+            run = openai.beta.threads.runs.create(
+                thread_id=thread.id,
+                assistant_id=ASSISTANT_ID,
+                tool_choice={
+                    "type": "function",
+                    "function": {
+                        "name": "handle_mcp_operation",
+                        "arguments": str(payload)
+                    }
+                }
+            )
+            while True:
+                run_status = openai.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+                if run_status.status == "completed":
+                    break
+            messages = openai.beta.threads.messages.list(thread_id=thread.id)
+            return {"response": messages.data[0].content[0].text.value}
+        except Exception as e:
+            return {"error": "Moderator generated invalid JSON.", "details": str(e), "raw_reply": reply}
+    else:
+        return {"response": reply}

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>GPT Memory Bridge</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; }
+    textarea, input, button { width: 100%; padding: 10px; margin-top: 10px; }
+    #response { white-space: pre-wrap; margin-top: 20px; background: #f0f0f0; padding: 10px; border-radius: 5px; }
+  </style>
+</head>
+<body>
+  <h1>GPT Memory Bridge</h1>
+  <textarea id="userInput" rows="4" placeholder="Enter your message here..."></textarea>
+  <button onclick="sendMessage()">Send to Moderator (/unified)</button>
+  <div id="response"></div>
+
+  <script>
+    async function sendMessage() {
+      const message = document.getElementById("userInput").value;
+      const res = await fetch("/unified", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message })
+      });
+      const data = await res.json();
+      document.getElementById("response").textContent = data.response || JSON.stringify(data);
+    }
+  </script>
+</body>
+</html>
