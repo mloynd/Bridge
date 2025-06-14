@@ -78,14 +78,8 @@ async def moderator_router(request: Request):
     body = await request.json()
     user_input = body.get("message", "Hello")
 
-    system_prompt = """
-You are the moderator. Your job is to decide if the user message should trigger a structured memory action.
-If so, return ONLY a JSON object with the tool call payload that matches the MCP schema.
-Use "operation": "crud" for standard database tasks, and "operation": "schema_memory" for schema-aware memory.
-Use commands like "create", "read", "update", "delete" for CRUD.
-Do not invent new operation types like "structuredData".
-If no memory operation is needed, respond conversationally.
-"""
+    with open("moderator_prompt.txt") as f:
+    system_prompt = f.read()
 
     response = client.chat.completions.create(
         model="gpt-4",
