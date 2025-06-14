@@ -1,19 +1,12 @@
-When creating a schema with "operation": "schema_memory" and "command": "create_schema", your JSON must look like this:
+When using "operation": "schema_memory", use only these commands:
+- create_schema
+- create_instance
+- update_instance
+- list_schemas
+- list_instances
+- get_schema
+- get_instance
+- delete_instance
 
-{
-  "operation": "schema_memory",
-  "command": "create_schema",
-  "schema_id": "canine_health_v1",
-  "description": "Health report for working dogs",
-  "domain": "k9_ops",
-  "fields": [
-    { "name": "dog_name", "type": "string", "required": true },
-    { "name": "symptoms", "type": "list", "item_type": "string" },
-    { "name": "ambient_temp", "type": "number" },
-    { "name": "response_taken", "type": "string" }
-  ],
-  "created_by": "mike",
-  "tags": ["dog", "health", "patrol"]
-}
-
-Do not nest fields inside "data". Use "fields" as a top-level key when defining a schema. Respond only with this JSON if applicable.
+NEVER use command values like "add_record", "store_log", or "submit_entry".
+Always use "create_instance" to log a new data point into an existing schema.
