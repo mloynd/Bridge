@@ -1,15 +1,14 @@
-# bridge_dual.py – Unified Chat + Tool Routing with UI support
+# bridge_dual.py – Unified Chat + Tool Routing with OpenAI v1+ support and UI
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-import openai
+from openai import OpenAI
 import requests
 import os
 from env import OPENAI_API_KEY, ASSISTANT_ID, MCP_URL
 
-openai.api_key = OPENAI_API_KEY
-
+client = OpenAI(api_key=OPENAI_API_KEY)
 app = FastAPI()
 
 # Serve static files (HTML UI)
@@ -25,7 +24,7 @@ async def chat_with_gpt(request: Request):
     body = await request.json()
     user_input = body.get("message", "Hello")
 
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": user_input}]
     )
@@ -38,20 +37,20 @@ async def bridge_to_scribe(request: Request):
     body = await request.json()
     user_input = body.get("message", "Hello")
 
-    thread = openai.beta.threads.create()
-    openai.beta.threads.messages.create(
+    thread = client.beta.threads.create()
+    client.beta.threads.messages.create(
         thread_id=thread.id,
         role="user",
         content=user_input
     )
 
-    run = openai.beta.threads.runs.create(
+    run = client.beta.threads.runs.create(
         thread_id=thread.id,
         assistant_id=ASSISTANT_ID
     )
 
     while True:
-        run_status = openai.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+        run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
 
         if run_status.status == "completed":
             break
@@ -61,7 +60,7 @@ async def bridge_to_scribe(request: Request):
             args = eval(tool_call.function.arguments)
             mcp_response = requests.post(MCP_URL, json=args).json()
 
-            openai.beta.threads.runs.submit_tool_outputs(
+            client.beta.threads.runs.submit_tool_outputs(
                 thread_id=thread.id,
                 run_id=run.id,
                 tool_outputs=[{
@@ -70,7 +69,7 @@ async def bridge_to_scribe(request: Request):
                 }]
             )
 
-    messages = openai.beta.threads.messages.list(thread_id=thread.id)
+    messages = client.beta.threads.messages.list(thread_id=thread.id)
     return {"response": messages.data[0].content[0].text.value}
 
 
@@ -85,7 +84,7 @@ If so, return ONLY a JSON object with the tool call payload that matches the MCP
 Otherwise, respond as a conversational assistant.
 """
 
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4",
         messages=[
             {"role": "system", "content": system_prompt},
@@ -98,13 +97,13 @@ Otherwise, respond as a conversational assistant.
     if reply.startswith("{"):
         try:
             payload = eval(reply)
-            thread = openai.beta.threads.create()
-            openai.beta.threads.messages.create(
+            thread = client.beta.threads.create()
+            client.beta.threads.messages.create(
                 thread_id=thread.id,
                 role="user",
                 content="Moderator forwarded structured memory command."
             )
-            run = openai.beta.threads.runs.create(
+            run = client.beta.threads.runs.create(
                 thread_id=thread.id,
                 assistant_id=ASSISTANT_ID,
                 tool_choice={
@@ -116,10 +115,10 @@ Otherwise, respond as a conversational assistant.
                 }
             )
             while True:
-                run_status = openai.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+                run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
                 if run_status.status == "completed":
                     break
-            messages = openai.beta.threads.messages.list(thread_id=thread.id)
+            messages = client.beta.threads.messages.list(thread_id=thread.id)
             return {"response": messages.data[0].content[0].text.value}
         except Exception as e:
             return {"error": "Moderator generated invalid JSON.", "details": str(e), "raw_reply": reply}
