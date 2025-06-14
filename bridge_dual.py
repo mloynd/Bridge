@@ -76,7 +76,6 @@ if messages.data and messages.data[0].content:
 else:
     return {"response": f"✅ Tool executed. MCP response: {mcp_response}"}
 
-
 @app.post("/unified")
 async def moderator_router(request: Request):
     body = await request.json()
