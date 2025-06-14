@@ -1,30 +1,79 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>GPT Memory Bridge</title>
+  <title>GPT Chat + Table UI</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 40px; }
-    textarea, input, button { width: 100%; padding: 10px; margin-top: 10px; }
-    #response { white-space: pre-wrap; margin-top: 20px; background: #f0f0f0; padding: 10px; border-radius: 5px; }
+    body { font-family: Arial, sans-serif; margin: 30px; display: flex; flex-direction: column; gap: 20px; }
+    #chatBox, #responseBox, #tableContainer { width: 100%; padding: 10px; }
+    textarea { width: 100%; height: 100px; padding: 10px; font-size: 1em; }
+    button { padding: 10px 20px; font-size: 1em; margin-top: 10px; }
+    #responseText { white-space: pre-wrap; margin-top: 20px; background: #f8f8f8; padding: 10px; border-radius: 4px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background-color: #eee; }
   </style>
 </head>
 <body>
-  <h1>GPT Memory Bridge</h1>
-  <textarea id="userInput" rows="4" placeholder="Enter your message here..."></textarea>
-  <button onclick="sendMessage()">Send to Moderator (/unified)</button>
-  <div id="response"></div>
+
+  <h1>GPT Memory Chat Interface</h1>
+
+  <div id="chatBox">
+    <textarea id="userInput" placeholder="Ask me anything... e.g., 'Show Luna's last health logs'"></textarea>
+    <button onclick="sendMessage()">Send</button>
+  </div>
+
+  <div id="responseBox">
+    <h3>GPT Response</h3>
+    <div id="responseText">Awaiting input...</div>
+  </div>
+
+  <div id="tableContainer" style="display:none;">
+    <h3>Structured Data</h3>
+    <table id="dataTable"></table>
+  </div>
 
   <script>
     async function sendMessage() {
-      const message = document.getElementById("userInput").value;
+      const input = document.getElementById("userInput").value;
+      document.getElementById("responseText").textContent = "Processing...";
+      document.getElementById("dataTable").innerHTML = "";
+      document.getElementById("tableContainer").style.display = "none";
+
       const res = await fetch("/unified", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message })
+        body: JSON.stringify({ message: input })
       });
+
       const data = await res.json();
-      document.getElementById("response").textContent = data.response || JSON.stringify(data);
+      const response = data.response;
+
+      try {
+        const parsed = JSON.parse(response);
+        if (Array.isArray(parsed)) {
+          renderTable(parsed);
+        } else {
+          document.getElementById("responseText").textContent = response;
+        }
+      } catch (e) {
+        document.getElementById("responseText").textContent = response;
+      }
+    }
+
+    function renderTable(data) {
+      if (!Array.isArray(data) || data.length === 0) return;
+
+      const table = document.getElementById("dataTable");
+      const headers = Object.keys(data[0]);
+      const headerRow = "<tr>" + headers.map(h => `<th>${h}</th>`).join("") + "</tr>";
+      const rows = data.map(row => {
+        return "<tr>" + headers.map(h => `<td>${row[h]}</td>`).join("") + "</tr>";
+      }).join("");
+
+      table.innerHTML = headerRow + rows;
+      document.getElementById("tableContainer").style.display = "block";
     }
   </script>
+
 </body>
 </html>
