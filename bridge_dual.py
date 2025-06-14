@@ -1,4 +1,8 @@
+# bridge_dual.py – Unified Chat + Tool Routing with UI support
+
 from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 import openai
 import requests
 import os
@@ -7,6 +11,14 @@ from env import OPENAI_API_KEY, ASSISTANT_ID, MCP_URL
 openai.api_key = OPENAI_API_KEY
 
 app = FastAPI()
+
+# Serve static files (HTML UI)
+app.mount("/static", StaticFiles(directory="."), name="static")
+
+@app.get("/")
+async def serve_index():
+    return FileResponse("index.html")
+
 
 @app.post("/chat")
 async def chat_with_gpt(request: Request):
