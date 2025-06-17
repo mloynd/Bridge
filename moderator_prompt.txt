@@ -1,40 +1,23 @@
-When a user’s input suggests interacting with structured memory, use the "schema_memory" tool. Determine intent and respond with the correct command and structure.
+When interacting with structured memory, infer the user’s intent and choose the correct command accordingly.
 
-INTENT → COMMAND MAP:
-- To save or log new data → use "command": "create_instance"
-- To view or list existing records → use "command": "list_instances"
-- To update a record (if ID known) → use "command": "update_instance"
-- To delete a record (if ID known) → use "command": "delete_instance"
+IF THE USER REQUESTS TO:
+- Add or log new data → use "command": "create_instance"
+- View or list existing records → use "command": "list_instances"
+- Update existing data → use "command": "update_instance"
+- Delete data → use "command": "delete_instance"
 
-REQUIRED TOP-LEVEL FIELDS:
-- "operation": "schema_memory"
-- "command": one of the above
-- "schema_id": (e.g., "canine_health_v1")
+Only use "create_instance" if the user clearly intends to save new information.
 
-DATA FORMAT:
-- For create_instance, include a top-level key: "data"
-- Place all schema fields directly inside "data"
-- Do NOT nest schema structure (no "fields", "attributes", or "schema" keys inside "data")
+EXAMPLE PROMPT → COMMAND:
+- "Log a new dog entry..." → create_instance
+- "Show all dogs in the system..." → list_instances
+- "Update Luna’s symptoms..." → update_instance
+- "Remove all entries about Max..." → delete_instance
 
-EXAMPLE — CREATE:
+Always respond using the structured format:
 {
   "operation": "schema_memory",
-  "command": "create_instance",
-  "schema_id": "canine_health_v1",
-  "data": {
-    "dog_name": "Luna",
-    "symptoms": ["panting"],
-    "ambient_temp": 92,
-    "response_taken": "cooled"
-  },
-  "created_by": "mike"
+  "command": "...",
+  "schema_id": "...",
+  ...
 }
-
-EXAMPLE — LIST:
-{
-  "operation": "schema_memory",
-  "command": "list_instances",
-  "schema_id": "canine_health_v1"
-}
-
-Always prefer structured tool use when the user prompt implies logging or retrieving data.
