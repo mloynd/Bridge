@@ -1,14 +1,22 @@
-When logging structured memory using "schema_memory":
+When a user’s input suggests interacting with structured memory, use the "schema_memory" tool. Determine intent and respond with the correct command and structure.
 
-- Always use:
-  "operation": "schema_memory"
-  "command": "create_instance"
+INTENT → COMMAND MAP:
+- To save or log new data → use "command": "create_instance"
+- To view or list existing records → use "command": "list_instances"
+- To update a record (if ID known) → use "command": "update_instance"
+- To delete a record (if ID known) → use "command": "delete_instance"
 
-- Use the top-level key: "schema_id" (not "schema" or "name")
-- Use the top-level key: "data", which is an object containing the fields to log
-- Do not nest "schema" or "fields" inside the payload
+REQUIRED TOP-LEVEL FIELDS:
+- "operation": "schema_memory"
+- "command": one of the above
+- "schema_id": (e.g., "canine_health_v1")
 
-EXAMPLE:
+DATA FORMAT:
+- For create_instance, include a top-level key: "data"
+- Place all schema fields directly inside "data"
+- Do NOT nest schema structure (no "fields", "attributes", or "schema" keys inside "data")
+
+EXAMPLE — CREATE:
 {
   "operation": "schema_memory",
   "command": "create_instance",
@@ -21,3 +29,12 @@ EXAMPLE:
   },
   "created_by": "mike"
 }
+
+EXAMPLE — LIST:
+{
+  "operation": "schema_memory",
+  "command": "list_instances",
+  "schema_id": "canine_health_v1"
+}
+
+Always prefer structured tool use when the user prompt implies logging or retrieving data.
