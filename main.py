@@ -1,11 +1,18 @@
 from fastapi import FastAPI, Request
-from bridge import run_mcp_conversation
+from handler import handle_schema_memory
+from pymongo import MongoClient
+from pymongo.server_api import ServerApi
+import os
 
 app = FastAPI()
 
-@app.post("/bridge")
-async def bridge(request: Request):
-    body = await request.json()
-    user_input = body.get("message", "Hello")
-    response = run_mcp_conversation(user_input)
-    return { "response": response }
+# Load MongoDB connection
+mongo_uri = os.getenv("MONGO_URI")
+client = MongoClient(mongo_uri, server_api=ServerApi('1'))
+db = client["MSE1"]  # <-- replace with your actual DB name
+
+@app.post("/schema_memory")
+async def schema_memory_endpoint(request: Request):
+    payload = await request.json()
+    result = handle_schema_memory(payload, db)
+    return result
