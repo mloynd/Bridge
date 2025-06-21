@@ -10,19 +10,19 @@ app = FastAPI()
 # CORS config
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Load API keys and MCP URL
+# Load API keys and MCP endpoint
 openai_key = os.getenv("OPENAI_API_KEY")
 if not openai_key:
     raise ValueError("OPENAI_API_KEY is not set in environment.")
 
 openai_client = OpenAI(api_key=openai_key)
-MCP_URL = os.getenv("MCP_URL")  # Example: https://mcp-server.onrender.com/schema_memory
+MCP_URL = os.getenv("MCP_URL")  # e.g. https://mcp-server.onrender.com/schema_memory
 
 @app.post("/bridge")
 async def unified_dispatcher(request: Request):
@@ -33,15 +33,18 @@ async def unified_dispatcher(request: Request):
         if not user_input:
             return JSONResponse(status_code=400, content={"error": "Missing 'input' field"})
 
-        # Use GPT to classify intent
+        # Step 1: Classify intent
         classification_prompt = [
             {
                 "role": "system",
-                "content": """You are a command router for a hybrid chat and memory system.
-Classify the user's input as one of the following:
-- 'schema' for memory operations (create/read/update/delete)
-- 'chat' for general assistant replies
-- 'unknown' if unclear."""
+                "content": "You are a command router for a hybrid memory and chat system. "
+                           "Classify the user's input as one of the following:
+"
+                           "- 'schema' for memory operations (create/read/update/delete)
+"
+                           "- 'chat' for general assistant replies
+"
+                           "- 'unknown' if unclear."
             },
             {"role": "user", "content": f"Input: {user_input}"}
         ]
@@ -55,13 +58,37 @@ Classify the user's input as one of the following:
         route = gpt_response.choices[0].message.content.strip().lower()
 
         if route == "schema":
-            # Forward to MCP
-            async with httpx.AsyncClient() as client:
-                mcp_response = await client.post(MCP_URL, json=payload)
-            return JSONResponse(status_code=mcp_response.status_code, content=mcp_response.json())
+            # Step 2: Ask GPT to generate a schema payload
+            generate_prompt = [
+                {
+                    "role": "system",
+                    "content": "You are a memory schema formatter. Given a user request, generate a valid JSON object "
+                               "containing: 'command', 'collection', and either 'data', 'filter', or 'update', depending on the intent. "
+                               "Only return valid JSON."
+                },
+                {"role": "user", "content": f"Input: {user_input}"}
+            ]
+
+            schema_response = openai_client.chat.completions.create(
+                model="gpt-4",
+                messages=generate_prompt,
+                temperature=0
+            )
+
+            # Try to parse GPT's response as JSON
+            try:
+                import json
+                schema_payload = json.loads(schema_response.choices[0].message.content)
+
+                async with httpx.AsyncClient() as client:
+                    mcp_response = await client.post(MCP_URL, json=schema_payload)
+                return JSONResponse(status_code=mcp_response.status_code, content=mcp_response.json())
+
+            except Exception as e:
+                return JSONResponse(status_code=500, content={"error": f"Schema generation failed: {str(e)}"})
 
         elif route == "chat":
-            # Return GPT reply
+            # Handle chat directly
             reply_response = openai_client.chat.completions.create(
                 model="gpt-4",
                 messages=[
@@ -77,4 +104,4 @@ Classify the user's input as one of the following:
             return JSONResponse(status_code=400, content={"error": "Unable to classify request intent."})
 
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": str(e)}})
