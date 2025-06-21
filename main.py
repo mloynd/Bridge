@@ -23,9 +23,10 @@ openai_key = os.getenv("OPENAI_API_KEY")
 mongo_uri = os.getenv("MONGO_URI")
 MCP_URL = os.getenv("MCP_URL")
 
-if not openai_key or not mongo_uri:
-    raise ValueError("Missing OPENAI_API_KEY or MONGO_URI")
-
+if mongo_uri:
+    mongo_client = MongoClient(mongo_uri)
+    log_collection = mongo_client["BridgeLogs"]["conversation_logs"]
+    
 openai_client = OpenAI(api_key=openai_key)
 mongo_client = MongoClient(mongo_uri)
 log_db = mongo_client["BridgeLogs"]
