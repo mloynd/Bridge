@@ -29,6 +29,13 @@ async def unified_dispatcher(request: Request):
         if not user_input:
             return JSONResponse(status_code=400, content={"error": "Missing 'input' field"})
 
+openai_key = os.getenv("OPENAI_API_KEY")
+if not openai_key:
+    raise ValueError("OPENAI_API_KEY is not set in environment.")
+
+openai_client = OpenAI(api_key=openai_key)
+
+        
         # Use GPT to classify intent
         classification_prompt = [
             {"role": "system", "content": "You are a command router for a hybrid chat and memory system. Classify the user's input as one of the following:
