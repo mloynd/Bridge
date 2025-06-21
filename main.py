@@ -16,8 +16,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load API keys
-openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Load API keys and MCP URL
+openai_key = os.getenv("OPENAI_API_KEY")
+if not openai_key:
+    raise ValueError("OPENAI_API_KEY is not set in environment.")
+
+openai_client = OpenAI(api_key=openai_key)
 MCP_URL = os.getenv("MCP_URL")  # Example: https://mcp-server.onrender.com/schema_memory
 
 @app.post("/bridge")
@@ -29,19 +33,16 @@ async def unified_dispatcher(request: Request):
         if not user_input:
             return JSONResponse(status_code=400, content={"error": "Missing 'input' field"})
 
-openai_key = os.getenv("OPENAI_API_KEY")
-if not openai_key:
-    raise ValueError("OPENAI_API_KEY is not set in environment.")
-
-openai_client = OpenAI(api_key=openai_key)
-
-        
         # Use GPT to classify intent
         classification_prompt = [
-            {"role": "system", "content": "You are a command router for a hybrid chat and memory system. Classify the user's input as one of the following:
+            {
+                "role": "system",
+                "content": """You are a command router for a hybrid chat and memory system.
+Classify the user's input as one of the following:
 - 'schema' for memory operations (create/read/update/delete)
 - 'chat' for general assistant replies
-- 'unknown' if unclear."},
+- 'unknown' if unclear."""
+            },
             {"role": "user", "content": f"Input: {user_input}"}
         ]
 
@@ -76,4 +77,4 @@ openai_client = OpenAI(api_key=openai_key)
             return JSONResponse(status_code=400, content={"error": "Unable to classify request intent."})
 
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)}})
+        return JSONResponse(status_code=500, content={"error": str(e)})
