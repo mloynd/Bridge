@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from openai import OpenAI
 import httpx
 import os
+import json
 
 app = FastAPI()
 
@@ -37,14 +38,11 @@ async def unified_dispatcher(request: Request):
         classification_prompt = [
             {
                 "role": "system",
-                "content": "You are a command router for a hybrid memory and chat system. "
-                           "Classify the user's input as one of the following:
-"
-                           "- 'schema' for memory operations (create/read/update/delete)
-"
-                           "- 'chat' for general assistant replies
-"
-                           "- 'unknown' if unclear."
+                "content": '''You are a command router for a hybrid memory and chat system.
+Classify the user's input as one of the following:
+- 'schema' for memory operations (create/read/update/delete)
+- 'chat' for general assistant replies
+- 'unknown' if unclear.'''
             },
             {"role": "user", "content": f"Input: {user_input}"}
         ]
@@ -62,9 +60,9 @@ async def unified_dispatcher(request: Request):
             generate_prompt = [
                 {
                     "role": "system",
-                    "content": "You are a memory schema formatter. Given a user request, generate a valid JSON object "
-                               "containing: 'command', 'collection', and either 'data', 'filter', or 'update', depending on the intent. "
-                               "Only return valid JSON."
+                    "content": '''You are a memory schema formatter. Given a user request, generate a valid JSON object
+containing: 'command', 'collection', and either 'data', 'filter', or 'update', depending on the intent.
+Only return valid JSON.'''
                 },
                 {"role": "user", "content": f"Input: {user_input}"}
             ]
@@ -75,20 +73,15 @@ async def unified_dispatcher(request: Request):
                 temperature=0
             )
 
-            # Try to parse GPT's response as JSON
             try:
-                import json
                 schema_payload = json.loads(schema_response.choices[0].message.content)
-
                 async with httpx.AsyncClient() as client:
                     mcp_response = await client.post(MCP_URL, json=schema_payload)
                 return JSONResponse(status_code=mcp_response.status_code, content=mcp_response.json())
-
             except Exception as e:
                 return JSONResponse(status_code=500, content={"error": f"Schema generation failed: {str(e)}"})
 
         elif route == "chat":
-            # Handle chat directly
             reply_response = openai_client.chat.completions.create(
                 model="gpt-4",
                 messages=[
@@ -104,4 +97,4 @@ async def unified_dispatcher(request: Request):
             return JSONResponse(status_code=400, content={"error": "Unable to classify request intent."})
 
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)}})
+        return JSONResponse(status_code=500, content={"error": str(e)})
