@@ -9,7 +9,6 @@ from pathlib import Path
 
 app = FastAPI()
 
-# CORS config
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,7 +17,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load environment
 openai_key = os.getenv("OPENAI_API_KEY")
 if not openai_key:
     raise ValueError("OPENAI_API_KEY is not set in environment.")
@@ -36,11 +34,9 @@ async def unified_dispatcher(request: Request):
         if not user_input:
             return JSONResponse(status_code=400, content={"error": "Missing 'input' field"})
 
-        # Load moderator prompt
         with open(MODERATOR_PROMPT_PATH, "r") as f:
             moderator_prompt = f.read()
 
-        # Step 1: Classify intent
         classification_prompt = [
             {"role": "system", "content": moderator_prompt},
             {"role": "user", "content": f"Input: {user_input}"}
@@ -55,23 +51,23 @@ async def unified_dispatcher(request: Request):
         route = gpt_response.choices[0].message.content.strip().lower()
 
         if route == "schema":
-            # Step 2: Generate schema payload
-            generation_prompt = [
+            schema_prompt = [
                 {
                     "role": "system",
                     "content": '''You are a memory schema formatter. Always return a valid JSON object with:
 - "command": one of "create", "read", "update", or "delete"
 - "collection": the target memory group (like "dogs", "people")
 - one of: "data", "filter", or "update"
-NEVER omit the "command" field — it is required.
-Only return valid JSON using double quotes.'''
+Only return valid JSON using double quotes.
+Do NOT use synonyms like 'add', 'insert', 'remove', or 'change'.
+The "command" field must exactly match one of the allowed values.'''
                 },
                 {"role": "user", "content": f"Input: {user_input}"}
             ]
 
             schema_response = openai_client.chat.completions.create(
                 model="gpt-4",
-                messages=generation_prompt,
+                messages=schema_prompt,
                 temperature=0
             )
 
@@ -81,7 +77,7 @@ Only return valid JSON using double quotes.'''
                 print("📤 Forwarding to MCP:", json.dumps(schema_payload, indent=2))
 
                 if "command" not in schema_payload:
-                    return JSONResponse(status_code=400, content={"error": "Generated schema payload is missing 'command'"})
+                    return JSONResponse(status_code=400, content={"error": "Missing 'command' in generated schema payload."})
 
                 if schema_payload["command"] not in {"create", "read", "update", "delete"}:
                     return JSONResponse(status_code=400, content={"error": "Unsupported command: " + schema_payload["command"]})
