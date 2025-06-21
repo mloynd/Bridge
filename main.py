@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from handler import handle_schema_memory
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
+import openai
 import os
 
 # Create FastAPI app
@@ -18,8 +19,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# MongoDB connection
+# Load environment variables
 mongo_uri = os.getenv("MONGO_URI")
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
+# MongoDB connection
 client = MongoClient(mongo_uri, server_api=ServerApi('1'))
 db = client["MSE1"]
 
@@ -37,14 +41,24 @@ async def schema_memory_endpoint(request: Request):
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-# 💬 Simple chat-style endpoint
+# 💬 GPT-powered chat endpoint
 @app.post("/chat")
 async def chat_endpoint(request: Request):
     try:
         data = await request.json()
         message = data.get("message", "")
-        # Temporary: mimic a GPT-like response
-        reply = f"You said: {message}"
+
+        response = openai.ChatCompletion.create(
+            model="gpt-4",  # or "gpt-3.5-turbo"
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": message}
+            ],
+            temperature=0.7
+        )
+
+        reply = response.choices[0].message["content"]
         return JSONResponse(content={"reply": reply})
+
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
