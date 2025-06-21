@@ -24,7 +24,7 @@ if not openai_key:
     raise ValueError("OPENAI_API_KEY is not set in environment.")
 openai_client = OpenAI(api_key=openai_key)
 
-MCP_URL = os.getenv("MCP_URL")  # e.g., https://mcp-server.onrender.com/schema_memory
+MCP_URL = os.getenv("MCP_URL")
 MODERATOR_PROMPT_PATH = Path(__file__).parent / "moderator_prompt.txt"
 
 @app.post("/bridge")
@@ -60,10 +60,11 @@ async def unified_dispatcher(request: Request):
                 {
                     "role": "system",
                     "content": '''You are a memory schema formatter. Always return a valid JSON object with:
-- "command": one of "create", "read", "update", "delete"
-- "collection": the target collection
+- "command": one of "create", "read", "update", or "delete"
+- "collection": the target memory group (like "dogs", "people")
 - one of: "data", "filter", or "update"
-Only return valid JSON with double quotes.'''
+NEVER omit the "command" field — it is required.
+Only return valid JSON using double quotes.'''
                 },
                 {"role": "user", "content": f"Input: {user_input}"}
             ]
@@ -77,11 +78,13 @@ Only return valid JSON with double quotes.'''
             try:
                 schema_payload = json.loads(schema_response.choices[0].message.content)
 
-                # Log the outgoing JSON
                 print("📤 Forwarding to MCP:", json.dumps(schema_payload, indent=2))
 
                 if "command" not in schema_payload:
-                    return JSONResponse(status_code=400, content={"error": "Missing 'command' in generated schema payload."})
+                    return JSONResponse(status_code=400, content={"error": "Generated schema payload is missing 'command'"})
+
+                if schema_payload["command"] not in {"create", "read", "update", "delete"}:
+                    return JSONResponse(status_code=400, content={"error": "Unsupported command: " + schema_payload["command"]})
 
                 async with httpx.AsyncClient() as client:
                     mcp_response = await client.post(MCP_URL, json=schema_payload)
