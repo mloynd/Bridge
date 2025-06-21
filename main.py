@@ -1,11 +1,13 @@
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from openai import OpenAI
+from pymongo import MongoClient
 import httpx
 import os
 import json
-from pathlib import Path
+from datetime import datetime
 
 app = FastAPI()
 
@@ -18,27 +20,29 @@ app.add_middleware(
 )
 
 openai_key = os.getenv("OPENAI_API_KEY")
-if not openai_key:
-    raise ValueError("OPENAI_API_KEY is not set in environment.")
-openai_client = OpenAI(api_key=openai_key)
-
+mongo_uri = os.getenv("MONGO_URI")
 MCP_URL = os.getenv("MCP_URL")
-MODERATOR_PROMPT_PATH = Path(__file__).parent / "moderator_prompt.txt"
+
+if not openai_key or not mongo_uri:
+    raise ValueError("Missing OPENAI_API_KEY or MONGO_URI")
+
+openai_client = OpenAI(api_key=openai_key)
+mongo_client = MongoClient(mongo_uri)
+log_db = mongo_client["BridgeLogs"]
+log_collection = log_db["conversation_logs"]
 
 @app.post("/bridge")
 async def unified_dispatcher(request: Request):
     try:
         payload = await request.json()
         user_input = payload.get("input", "")
+        session_id = payload.get("session_id", "default")
 
         if not user_input:
             return JSONResponse(status_code=400, content={"error": "Missing 'input' field"})
 
-        with open(MODERATOR_PROMPT_PATH, "r") as f:
-            moderator_prompt = f.read()
-
         classification_prompt = [
-            {"role": "system", "content": moderator_prompt},
+            {"role": "system", "content": "You are a command router for a hybrid memory and chat system.\nClassify the user's input strictly as one of:\n- schema\n- chat\n- unknown\n\nOnly return one of those words. Do not explain. Do not use quotes."},
             {"role": "user", "content": f"Input: {user_input}"}
         ]
 
@@ -49,18 +53,22 @@ async def unified_dispatcher(request: Request):
         )
 
         route = gpt_response.choices[0].message.content.strip().lower()
+        print(f"🧠 GPT classified route as: {route}")
+
+        if "schema" in route:
+            route = "schema"
+        elif "chat" in route:
+            route = "chat"
+        elif "unknown" in route:
+            route = "unknown"
+
+        full_response = {}
 
         if route == "schema":
             schema_prompt = [
                 {
                     "role": "system",
-                    "content": '''You are a memory schema formatter. Always return a valid JSON object with:
-- "command": one of "create", "read", "update", or "delete"
-- "collection": the target memory group (like "dogs", "people")
-- one of: "data", "filter", or "update"
-Only return valid JSON using double quotes.
-Do NOT use synonyms like 'add', 'insert', 'remove', or 'change'.
-The "command" field must exactly match one of the allowed values.'''
+                    "content": "You are a memory schema formatter. Always return a valid JSON object with:\n- \"command\": one of \"create\", \"read\", \"update\", or \"delete\"\n- \"collection\": the target memory group (like \"dogs\", \"people\")\n- one of: \"data\", \"filter\", or \"update\"\nOnly return valid JSON using double quotes."
                 },
                 {"role": "user", "content": f"Input: {user_input}"}
             ]
@@ -73,10 +81,8 @@ The "command" field must exactly match one of the allowed values.'''
 
             try:
                 schema_payload = json.loads(schema_response.choices[0].message.content)
+                print("📤 Forwarding to MCP:", json.dumps(schema_payload, indent=2))
 
-                print("📤 Forwarding to MCP (before command remap):", json.dumps(schema_payload, indent=2))
-
-                # Add synonym remapping
                 synonyms = {
                     "add": "create", "insert": "create",
                     "remove": "delete", "erase": "delete",
@@ -87,20 +93,17 @@ The "command" field must exactly match one of the allowed values.'''
                     cmd = schema_payload["command"].lower()
                     schema_payload["command"] = synonyms.get(cmd, cmd)
 
-                print("📤 Final command to MCP:", schema_payload["command"])
-
                 if "command" not in schema_payload:
-                    return JSONResponse(status_code=400, content={"error": "Missing 'command' in generated schema payload."})
-
-                if schema_payload["command"] not in {"create", "read", "update", "delete"}:
-                    return JSONResponse(status_code=400, content={"error": "Unsupported command: " + schema_payload["command"]})
+                    raise ValueError("Missing 'command' in schema payload")
 
                 async with httpx.AsyncClient() as client:
                     mcp_response = await client.post(MCP_URL, json=schema_payload)
-                return JSONResponse(status_code=mcp_response.status_code, content=mcp_response.json())
+                full_response = mcp_response.json()
+                return JSONResponse(status_code=mcp_response.status_code, content=full_response)
 
             except Exception as e:
-                return JSONResponse(status_code=500, content={"error": f"Schema generation failed: {str(e)}"})
+                full_response = {"error": f"Schema generation failed: {str(e)}"}
+                return JSONResponse(status_code=500, content=full_response)
 
         elif route == "chat":
             reply_response = openai_client.chat.completions.create(
@@ -112,10 +115,19 @@ The "command" field must exactly match one of the allowed values.'''
                 temperature=0.7
             )
             reply = reply_response.choices[0].message.content
-            return JSONResponse(content={"reply": reply})
+            full_response = {"reply": reply}
+            return JSONResponse(content=full_response)
 
         else:
-            return JSONResponse(status_code=400, content={"error": "Unable to classify request intent."})
+            full_response = {"error": "Unable to classify request intent."}
+            return JSONResponse(status_code=400, content=full_response)
 
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+    finally:
+        # Log the exchange
+        log_collection.insert_one({
+            "session_id": session_id,
+            "timestamp": datetime.utcnow(),
+            "input": payload.get("input", ""),
+            "route": route,
+            "response": full_response
+        })
