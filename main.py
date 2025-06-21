@@ -3,7 +3,6 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from openai import OpenAI
-from pymongo import MongoClient
 import httpx
 import os
 import json
@@ -20,20 +19,17 @@ app.add_middleware(
 )
 
 openai_key = os.getenv("OPENAI_API_KEY")
-mongo_uri = os.getenv("MONGO_URI")
 MCP_URL = os.getenv("MCP_URL")
 
-if mongo_uri:
-    mongo_client = MongoClient(mongo_uri)
-    log_collection = mongo_client["BridgeLogs"]["conversation_logs"]
-    
+if not openai_key or not MCP_URL:
+    raise ValueError("Missing OPENAI_API_KEY or MCP_URL")
+
 openai_client = OpenAI(api_key=openai_key)
-mongo_client = MongoClient(mongo_uri)
-log_db = mongo_client["BridgeLogs"]
-log_collection = log_db["conversation_logs"]
 
 @app.post("/bridge")
 async def unified_dispatcher(request: Request):
+    route = "unclassified"
+    full_response = {}
     try:
         payload = await request.json()
         user_input = payload.get("input", "")
@@ -62,8 +58,6 @@ async def unified_dispatcher(request: Request):
             route = "chat"
         elif "unknown" in route:
             route = "unknown"
-
-        full_response = {}
 
         if route == "schema":
             schema_prompt = [
@@ -124,11 +118,17 @@ async def unified_dispatcher(request: Request):
             return JSONResponse(status_code=400, content=full_response)
 
     finally:
-        # Log the exchange
-        log_collection.insert_one({
-            "session_id": session_id,
-            "timestamp": datetime.utcnow(),
-            "input": payload.get("input", ""),
-            "route": route,
-            "response": full_response
-        })
+        # Log the interaction to MCP
+        try:
+            log_payload = {
+                "operation": "log_conversation",
+                "session_id": payload.get("session_id", "default"),
+                "timestamp": datetime.utcnow().isoformat(),
+                "input": payload.get("input", ""),
+                "route": route,
+                "response": full_response
+            }
+            async with httpx.AsyncClient() as client:
+                await client.post(MCP_URL, json=log_payload)
+        except Exception as log_error:
+            print(f"⚠️ Failed to log conversation: {log_error}")
