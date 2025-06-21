@@ -5,6 +5,7 @@ from openai import OpenAI
 import httpx
 import os
 import json
+from pathlib import Path
 
 app = FastAPI()
 
@@ -17,13 +18,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load API keys and MCP endpoint
+# Load environment
 openai_key = os.getenv("OPENAI_API_KEY")
 if not openai_key:
     raise ValueError("OPENAI_API_KEY is not set in environment.")
-
 openai_client = OpenAI(api_key=openai_key)
-MCP_URL = os.getenv("MCP_URL")  # e.g. https://mcp-server.onrender.com/schema_memory
+
+MCP_URL = os.getenv("MCP_URL")  # e.g., https://mcp-server.onrender.com/schema_memory
+MODERATOR_PROMPT_PATH = Path(__file__).parent / "moderator_prompt.txt"
 
 @app.post("/bridge")
 async def unified_dispatcher(request: Request):
@@ -34,16 +36,13 @@ async def unified_dispatcher(request: Request):
         if not user_input:
             return JSONResponse(status_code=400, content={"error": "Missing 'input' field"})
 
+        # Load moderator prompt
+        with open(MODERATOR_PROMPT_PATH, "r") as f:
+            moderator_prompt = f.read()
+
         # Step 1: Classify intent
         classification_prompt = [
-            {
-                "role": "system",
-                "content": '''You are a command router for a hybrid memory and chat system.
-Classify the user's input as one of the following:
-- 'schema' for memory operations (create/read/update/delete)
-- 'chat' for general assistant replies
-- 'unknown' if unclear.'''
-            },
+            {"role": "system", "content": moderator_prompt},
             {"role": "user", "content": f"Input: {user_input}"}
         ]
 
@@ -56,28 +55,38 @@ Classify the user's input as one of the following:
         route = gpt_response.choices[0].message.content.strip().lower()
 
         if route == "schema":
-            # Step 2: Ask GPT to generate a schema payload
-            generate_prompt = [
+            # Step 2: Generate schema payload
+            generation_prompt = [
                 {
                     "role": "system",
-                    "content": '''You are a memory schema formatter. Given a user request, generate a valid JSON object
-containing: 'command', 'collection', and either 'data', 'filter', or 'update', depending on the intent.
-Only return valid JSON.'''
+                    "content": '''You are a memory schema formatter. Always return a valid JSON object with:
+- "command": one of "create", "read", "update", "delete"
+- "collection": the target collection
+- one of: "data", "filter", or "update"
+Only return valid JSON with double quotes.'''
                 },
                 {"role": "user", "content": f"Input: {user_input}"}
             ]
 
             schema_response = openai_client.chat.completions.create(
                 model="gpt-4",
-                messages=generate_prompt,
+                messages=generation_prompt,
                 temperature=0
             )
 
             try:
                 schema_payload = json.loads(schema_response.choices[0].message.content)
+
+                # Log the outgoing JSON
+                print("📤 Forwarding to MCP:", json.dumps(schema_payload, indent=2))
+
+                if "command" not in schema_payload:
+                    return JSONResponse(status_code=400, content={"error": "Missing 'command' in generated schema payload."})
+
                 async with httpx.AsyncClient() as client:
                     mcp_response = await client.post(MCP_URL, json=schema_payload)
                 return JSONResponse(status_code=mcp_response.status_code, content=mcp_response.json())
+
             except Exception as e:
                 return JSONResponse(status_code=500, content={"error": f"Schema generation failed: {str(e)}"})
 
