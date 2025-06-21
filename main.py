@@ -74,7 +74,20 @@ The "command" field must exactly match one of the allowed values.'''
             try:
                 schema_payload = json.loads(schema_response.choices[0].message.content)
 
-                print("📤 Forwarding to MCP:", json.dumps(schema_payload, indent=2))
+                print("📤 Forwarding to MCP (before command remap):", json.dumps(schema_payload, indent=2))
+
+                # Add synonym remapping
+                synonyms = {
+                    "add": "create", "insert": "create",
+                    "remove": "delete", "erase": "delete",
+                    "change": "update", "modify": "update",
+                    "get": "read", "find": "read"
+                }
+                if "command" in schema_payload:
+                    cmd = schema_payload["command"].lower()
+                    schema_payload["command"] = synonyms.get(cmd, cmd)
+
+                print("📤 Final command to MCP:", schema_payload["command"])
 
                 if "command" not in schema_payload:
                     return JSONResponse(status_code=400, content={"error": "Missing 'command' in generated schema payload."})
